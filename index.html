@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="ko" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>지리산 둘레길 완주일지 & 코스 가이드</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            jirisan: {
+              50: '#f2f7f3',
+              100: '#e1eee4',
+              500: '#2d6a4f',
+              600: '#1b4332',
+              700: '#081c15',
+              stamp: '#c92a2a',
+            }
+          },
+          fontFamily: {
+            sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'System-UI', 'Roboto', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 9999px; }
+
+    /* Stamp Press Animation */
+    @keyframes stampPress {
+      0% { opacity: 0; transform: scale(2.5) rotate(-15deg); }
+      50% { opacity: 0.9; transform: scale(0.95) rotate(-3deg); }
+      70% { transform: scale(1.05) rotate(-5deg); }
+      100% { opacity: 1; transform: scale(1) rotate(-6deg); }
+    }
+    .stamp-animated {
+      animation: stampPress 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+
+    /* Map container smooth view */
+    #map { height: 320px; width: 100%; border-radius: 0.75rem; z-index: 10; }
+
+    /* Remove outline on Leaflet controls */
+    .leaflet-container { font-family: inherit; }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100 min-h-full flex flex-col font-sans transition-colors duration-200">
+
+  <!-- MAIN CONTAINER -->
+  <div class="max-w-4xl mx-auto w-full flex-grow flex flex-col min-h-screen shadow-xl bg-white dark:bg-gray-800">
+
+    <!-- TOP HEADER -->
+    <header class="sticky top-0 z-40 bg-jirisan-600 text-white px-4 py-3 shadow-md flex items-center justify-between">
+      <div class="flex items-center gap-2 cursor-pointer" onclick="showListView()">
+        <i class="fa-solid font-bold fa-mountain-sun text-emerald-300 text-xl"></i>
+        <h1 class="text-lg font-bold tracking-tight">지리산 둘레길 완주일지</h1>
+      </div>
+
+      <!-- Controls Right -->
+      <div class="flex items-center gap-2">
+        <!-- JSON Backup / Restore -->
+        <button onclick="exportData()" title="일지 데이터 백업(JSON)" class="px-2.5 py-1.5 bg-jirisan-500 hover:bg-jirisan-700 rounded-lg text-xs font-medium flex items-center gap-1 transition">
+          <i class="fa-solid fa-download"></i> <span class="hidden sm:inline">백업</span>
+        </button>
+        <label title="일지 데이터 복원(JSON)" class="px-2.5 py-1.5 bg-jirisan-500 hover:bg-jirisan-700 rounded-lg text-xs font-medium flex items-center gap-1 cursor-pointer transition">
+          <i class="fa-solid fa-upload"></i> <span class="hidden sm:inline">복원</span>
+          <input type="file" id="importFileInput" accept=".json" class="hidden" onchange="importData(event)">
+        </label>
+
+        <!-- Single Theme Switcher -->
+        <button id="themeToggleBtn" onclick="toggleTheme()" class="p-2 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-amber-300 transition" title="다크/라이트 모드 전환">
+          <i id="themeIcon" class="fa-solid fa-moon"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- VIEW 1: MAIN COURSE LIST VIEW -->
+    <main id="listView" class="p-4 flex-grow space-y-4">
+
+      <!-- Overall Completion Dashboard -->
+      <section class="bg-emerald-50 dark:bg-gray-700/60 rounded-xl p-4 border border-emerald-200 dark:border-gray-600">
+        <div class="flex justify-between items-end mb-2">
+          <div>
+            <h2 class="text-sm font-semibold text-jirisan-600 dark:text-emerald-400">전체 21개 코스 완주 현황</h2>
+            <p class="text-xs text-gray-500 dark:text-gray-300 mt-0.5">총 289.5 km 둘레길 여정</p>
+          </div>
+          <div class="text-right">
+            <span id="completedCount" class="text-2xl font-black text-jirisan-600 dark:text-emerald-400">0</span>
+            <span class="text-sm text-gray-500 dark:text-gray-300"> / 21 코스</span>
+          </div>
+        </div>
+        <!-- Progress Bar -->
+        <div class="w-full bg-gray-200 dark:bg-gray-600 h-3 rounded-full overflow-hidden">
+          <div id="progressBar" class="bg-jirisan-500 h-full transition-all duration-500" style="width: 0%"></div>
+        </div>
+        <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+          <span id="completedDistance">0 km 완주</span>
+          <span id="progressPercent">0%</span>
+        </div>
+      </section>
+
+      <!-- Filter Chips -->
+      <section class="flex flex-wrap items-center gap-1.5 text-xs">
+        <span class="text-gray-500 dark:text-gray-400 font-medium mr-1"><i class="fa-solid fa-filter"></i> 필터:</span>
+        <button onclick="setFilter('all')" id="filter-all" class="filter-btn active px-3 py-1 rounded-full bg-jirisan-600 text-white font-medium">전체 (21)</button>
+        <button onclick="setFilter('completed')" id="filter-completed" class="filter-btn px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200">완주 완료</button>
+        <button onclick="setFilter('pending')" id="filter-pending" class="filter-btn px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200">미완주</button>
+        <span class="border-r border-gray-300 dark:border-gray-600 h-4 mx-1"></span>
+        <button onclick="setRegionFilter('all')" id="region-all" class="region-btn active px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-gray-700 dark:text-emerald-300">전지역</button>
+        <button onclick="setRegionFilter('남원')" id="region-남원" class="region-btn px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">남원</button>
+        <button onclick="setRegionFilter('함양')" id="region-함양" class="region-btn px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">함양</button>
+        <button onclick="setRegionFilter('산청')" id="region-산청" class="region-btn px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">산청</button>
+        <button onclick="setRegionFilter('하동')" id="region-하동" class="region-btn px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">하동</button>
+        <button onclick="setRegionFilter('구례')" id="region-구례" class="region-btn px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">구례</button>
+      </section>
+
+      <!-- COURSE GRID LIST (Compact Cards) -->
+      <div id="courseGrid" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- Dynamically injected simplified course cards -->
+      </div>
+    </main>
+
+    <!-- VIEW 2: COURSE DETAIL VIEW -->
+    <main id="detailView" class="hidden p-4 flex-grow space-y-4">
+
+      <!-- Back Navigation Header -->
+      <div class="flex items-center justify-between border-b pb-3 border-gray-200 dark:border-gray-700">
+        <button onclick="showListView()" class="px-3 py-1.5 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs font-semibold flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-arrow-left"></i> 코스 목록으로
+        </button>
+
+        <!-- Completion Toggle Button -->
+        <button id="toggleCompleteBtn" onclick="toggleCourseCompletion()" class="px-4 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow">
+          <!-- Dynamically set -->
+        </button>
+      </div>
+
+      <!-- Course Summary Card with Dynamic Completion Stamp -->
+      <div class="relative bg-emerald-50 dark:bg-gray-700/50 rounded-xl p-4 border border-emerald-200 dark:border-gray-600 overflow-hidden shadow-sm">
+        
+        <!-- Authentic Jirisan Completion SVG Stamp Seal (Visible if completed) -->
+        <div id="detailStampContainer" class="hidden absolute top-2 right-2 pointer-events-none z-20">
+          <div class="stamp-animated transform -rotate-6">
+            <svg width="105" height="105" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="60" cy="60" r="54" fill="none" stroke="#c92a2a" stroke-width="4" stroke-dasharray="80 3 40 2" opacity="0.9" />
+              <circle cx="60" cy="60" r="48" fill="none" stroke="#c92a2a" stroke-width="2" opacity="0.85" />
+              <path id="curve" fill="none" d="M 22 60 A 38 38 0 0 1 98 60" />
+              <text fill="#c92a2a" font-size="10" font-weight="bold" letter-spacing="1">
+                <textPath href="#curve" startOffset="50%" text-anchor="middle">지리산 둘레길 완주인증</textPath>
+              </text>
+              <text x="60" y="58" text-anchor="middle" fill="#c92a2a" font-size="13" font-weight="900" id="stampCourseText">1코스</text>
+              <text x="60" y="74" text-anchor="middle" fill="#c92a2a" font-size="8.5" font-weight="bold" id="stampDateText">2026-03-29</text>
+              <circle cx="60" cy="60" r="4" fill="#c92a2a" opacity="0.4" />
+            </svg>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 mb-1">
+          <span id="detailBadge" class="px-2.5 py-0.5 rounded-full bg-jirisan-600 text-white text-xs font-bold">1코스</span>
+          <span id="detailRegion" class="text-xs text-gray-500 dark:text-gray-300 font-medium">전북 남원</span>
+        </div>
+
+        <h2 id="detailTitle" class="text-xl font-bold text-gray-900 dark:text-white mb-2">주천 - 운봉</h2>
+
+        <!-- Info Badges -->
+        <div class="flex flex-wrap gap-2 text-xs mb-3">
+          <span class="bg-white dark:bg-gray-800 px-2.5 py-1 rounded-md border text-gray-700 dark:text-gray-300 font-medium">
+            <i class="fa-solid fa-route text-emerald-600 mr-1"></i> <span id="detailDistance">14.7 km</span>
+          </span>
+          <span class="bg-white dark:bg-gray-800 px-2.5 py-1 rounded-md border text-gray-700 dark:text-gray-300 font-medium">
+            <i class="fa-regular fa-clock text-emerald-600 mr-1"></i> <span id="detailDuration">6시간</span>
+          </span>
+          <span class="bg-white dark:bg-gray-800 px-2.5 py-1 rounded-md border text-gray-700 dark:text-gray-300 font-medium">
+            <i class="fa-solid fa-mountain text-emerald-600 mr-1"></i> 난이도 <span id="detailDifficulty">중</span>
+          </span>
+        </div>
+
+        <!-- Waypoints -->
+        <div class="text-xs text-gray-600 dark:text-gray-300 bg-white/70 dark:bg-gray-800/70 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+          <i class="fa-solid fa-location-dot text-red-500 mr-1"></i> <strong>주요 거점:</strong>
+          <span id="detailWaypoints">주천안내소 - 솔정지 - 구룡치 - 회덕마을 - 덕산저수지 - 노고목 - 운봉읍</span>
+        </div>
+      </div>
+
+      <!-- Quick Action Bar: Date, Weather, WakeLock & GPX -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-gray-50 dark:bg-gray-700/40 p-3 rounded-xl border border-gray-200 dark:border-gray-700 text-xs">
+        <!-- Date Selector -->
+        <div class="flex items-center gap-2">
+          <label class="font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1">
+            <i class="fa-regular fa-calendar-check text-emerald-600"></i> 완주일:
+          </label>
+          <input type="date" id="completionDateInput" onchange="updateCompletionDate(this.value)" class="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-xs">
+        </div>
+
+        <!-- Weather Pills -->
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <span class="font-semibold text-gray-700 dark:text-gray-300 mr-1">날씨:</span>
+          <button onclick="setWeather('☀️ 밝음')" class="weather-pill px-2 py-0.5 rounded border bg-white dark:bg-gray-800" data-weather="☀️ 밝음">☀️ 밝음</button>
+          <button onclick="setWeather('⛅ 구름')" class="weather-pill px-2 py-0.5 rounded border bg-white dark:bg-gray-800" data-weather="⛅ 구름">⛅ 구름</button>
+          <button onclick="setWeather('🌧️ 비')" class="weather-pill px-2 py-0.5 rounded border bg-white dark:bg-gray-800" data-weather="🌧️ 비">🌧️ 비</button>
+          <button onclick="setWeather('❄️ 눈')" class="weather-pill px-2 py-0.5 rounded border bg-white dark:bg-gray-800" data-weather="❄️ 눈">❄️ 눈</button>
+        </div>
+
+        <!-- Extra Utilities: WakeLock & GPX -->
+        <div class="sm:col-span-2 flex items-center justify-between border-t border-gray-200 dark:border-gray-600 pt-2">
+          <button id="wakeLockBtn" onclick="toggleWakeLock()" class="px-2.5 py-1 rounded bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 text-gray-700 dark:text-gray-200 font-medium flex items-center gap-1">
+            <i class="fa-solid fa-mobile-screen"></i> <span id="wakeLockStatus">화면 켜짐 유지 ON</span>
+          </button>
+          <label class="px-2.5 py-1 rounded bg-emerald-700 hover:bg-emerald-800 text-white font-medium cursor-pointer flex items-center gap-1">
+            <i class="fa-solid fa-file-arrow-up"></i> GPX 오버레이
+            <input type="file" id="gpxInput" accept=".gpx" class="hidden" onchange="handleGPXUpload(event)">
+          </label>
+        </div>
+      </div>
+
+      <!-- MAP SECTION (100% Free Tile Layer, Key-Free) -->
+      <section class="space-y-1">
+        <div class="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
+          <span class="font-semibold"><i class="fa-solid fa-map-location-dot text-emerald-600 mr-1"></i> 코스 지도 & 주요 지점</span>
+          <span>마커 클릭 시 카카오맵/네이버지도 GPS 연결</span>
+        </div>
+        <div id="map" class="shadow-inner border border-gray-300 dark:border-gray-600"></div>
+      </section>
+
+      <!-- ELEVATION PROFILE CHART -->
+      <section class="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+        <div class="flex justify-between items-center mb-2">
+          <h3 class="text-xs font-bold text-gray-700 dark:text-gray-300 flex items-center gap-1">
+            <i class="fa-solid fa-chart-area text-emerald-600"></i> 해발고도 프로필
+          </h3>
+          <span class="text-[10px] text-gray-400">거리(km) vs 고도(m)</span>
+        </div>
+        <div class="h-44 w-full">
+          <canvas id="elevationChart"></canvas>
+        </div>
+      </section>
+
+      <!-- 4 PHOTO UPLOAD SLOTS (IndexedDB Saved) -->
+      <section class="space-y-2">
+        <div class="flex justify-between items-center">
+          <h3 class="text-xs font-bold text-gray-700 dark:text-gray-300 flex items-center gap-1">
+            <i class="fa-solid fa-camera text-emerald-600"></i> 코스 기록 사진 (4종 인증)
+          </h3>
+          <span class="text-[10px] text-gray-400">IndexedDB 자동 저장</span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <!-- Photo Slot 1: Stamp Book -->
+          <div class="bg-gray-50 dark:bg-gray-700/40 p-2 rounded-lg border border-gray-200 dark:border-gray-600 flex flex-col items-center">
+            <span class="font-semibold text-gray-600 dark:text-gray-300 mb-1">1. 스탬프 북 인증</span>
+            <div id="imgPreview-stamp" class="w-full h-28 bg-gray-200 dark:bg-gray-800 rounded flex items-center justify-center overflow-hidden relative cursor-pointer group" onclick="triggerPhotoUpload('stamp')">
+              <span class="text-gray-400 group-hover:text-emerald-500 text-2xl"><i class="fa-solid fa-plus"></i></span>
+            </div>
+            <input type="file" id="photoInput-stamp" accept="image/*" class="hidden" onchange="handlePhotoUpload(event, 'stamp')">
+          </div>
+
+          <!-- Photo Slot 2: Tracking App Screen -->
+          <div class="bg-gray-50 dark:bg-gray-700/40 p-2 rounded-lg border border-gray-200 dark:border-gray-600 flex flex-col items-center">
+            <span class="font-semibold text-gray-600 dark:text-gray-300 mb-1">2. 트래킹 앱 캡처</span>
+            <div id="imgPreview-app" class="w-full h-28 bg-gray-200 dark:bg-gray-800 rounded flex items-center justify-center overflow-hidden relative cursor-pointer group" onclick="triggerPhotoUpload('app')">
+              <span class="text-gray-400 group-hover:text-emerald-500 text-2xl"><i class="fa-solid fa-plus"></i></span>
+            </div>
+            <input type="file" id="photoInput-app" accept="image/*" class="hidden" onchange="handlePhotoUpload(event, 'app')">
+          </div>
+
+          <!-- Photo Slot 3: Bus Timetable -->
+          <div class="bg-gray-50 dark:bg-gray-700/40 p-2 rounded-lg border border-gray-200 dark:border-gray-600 flex flex-col items-center">
+            <span class="font-semibold text-gray-600 dark:text-gray-300 mb-1">3. 버스 시간표 캡처</span>
+            <div id="imgPreview-bus" class="w-full h-28 bg-gray-200 dark:bg-gray-800 rounded flex items-center justify-center overflow-hidden relative cursor-pointer group" onclick="triggerPhotoUpload('bus')">
+              <span class="text-gray-400 group-hover:text-emerald-500 text-2xl"><i class="fa-solid fa-plus"></i></span>
+            </div>
+            <input type="file" id="photoInput-bus" accept="image/*" class="hidden" onchange="handlePhotoUpload(event, 'bus')">
+          </div>
+
+          <!-- Photo Slot 4: Certification Photo -->
+          <div class="bg-gray-50 dark:bg-gray-700/40 p-2 rounded-lg border border-gray-200 dark:border-gray-600 flex flex-col items-center">
+            <span class="font-semibold text-gray-600 dark:text-gray-300 mb-1">4. 현장 인증샷</span>
+            <div id="imgPreview-cert" class="w-full h-28 bg-gray-200 dark:bg-gray-800 rounded flex items-center justify-center overflow-hidden relative cursor-pointer group" onclick="triggerPhotoUpload('cert')">
+              <span class="text-gray-400 group-hover:text-emerald-500 text-2xl"><i class="fa-solid fa-plus"></i></span>
+            </div>
+            <input type="file" id="photoInput-cert" accept="image/*" class="hidden" onchange="handlePhotoUpload(event, 'cert')">
+          </div>
+        </div>
+      </section>
+
+      <!-- PERSONAL MEMO -->
+      <section class="space-y-1">
+        <label class="text-xs font-bold text-gray-700 dark:text-gray-300 flex items-center gap-1">
+          <i class="fa-solid fa-pen-to-square text-emerald-600"></i> 코스 개인 메모 & 동반자 기록
+        </label>
+        <textarea id="memoInput" onchange="saveMemo(this.value)" rows="3" placeholder="날씨, 맛집, 함께한 사람들, 특이사항을 자유롭게 메모하세요..." class="w-full p-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:outline-none"></textarea>
+      </section>
+
+    </main>
+
+    <!-- FOOTER: ETIQUETTE & EMERGENCY -->
+    <footer class="mt-auto bg-gray-800 text-gray-300 p-4 text-xs border-t border-gray-700 space-y-2">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-700 pb-2">
+        <span class="font-bold text-emerald-400"><i class="fa-solid fa-person-hiking"></i> 지리산 둘레길 에티켓</span>
+        <span class="text-gray-400">사단법인 숲길 안내센터</span>
+      </div>
+      <p class="leading-relaxed text-[11px] text-gray-400">
+        • 주민 농작물 무단 수확 금지 • 쓰레기 되가져가기 • 지정된 탐방로 준수 • 일몰 전 산행 완료
+      </p>
+      <div class="flex flex-wrap gap-4 text-[11px] pt-1 text-emerald-300 font-medium">
+        <span><i class="fa-solid fa-phone text-xs"></i> 산림청 구조: 1688-3119</span>
+        <span><i class="fa-solid fa-hospital text-xs"></i> 비상연락: 119 / 112</span>
+        <span><i class="fa-solid fa-globe text-xs"></i> jirisantrail.kr</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- LIGHTBOX MODAL FOR ENLARGING PHOTOS -->
+  <div id="lightbox" class="fixed inset-0 z-50 bg-black/90 hidden flex items-center justify-center p-4" onclick="closeLightbox()">
+    <img id="lightboxImg" class="max-w-full max-h-full object-contain rounded-lg">
+  </div>
+
+  <!-- JAVASCRIPT APP LOGIC -->
+  <script>
+    // ----------------------------------------------------
+    // 1. DATA: 21 OFFICIAL JIRISAN DULLE-GIL COURSES
+    // ----------------------------------------------------
+    const COURSES_DATA = [
+      { id: 1, name: "1코스 주천-운봉", region: "전북 남원", dist: "14.7km", dur: "6시간", diff: "중", startLat: 35.3705, startLng: 127.4042, endLat: 35.4431, endLng: 127.5258, waypoints: "주천안내소-솔정지-구룡치-회덕마을-덕산저수지-노고목-운봉읍", stamps: [{ name: "주천안내소(시점)", lat: 35.3705, lng: 127.4042 }, { name: "운봉읍사무소(종점)", lat: 35.4431, lng: 127.5258 }], restrooms: [{ name: "내송 마을 화장실", lat: 35.3850, lng: 127.4210 }], stores: [{ name: "운봉 하나로마트", lat: 35.4425, lng: 127.5240 }], elev: [200, 280, 530, 480, 460, 470] },
+      { id: 2, name: "2코스 운봉-인월", region: "전북 남원", dist: "9.9km", dur: "4시간", diff: "쉬움", startLat: 35.4431, startLng: 127.5258, endLat: 35.4522, endLng: 127.6253, waypoints: "운봉읍-서짓재-황산대첩비지-옥계저수지-흥부골자연휴양림-인월센터", stamps: [{ name: "운봉읍(시점)", lat: 35.4431, lng: 127.5258 }, { name: "인월센터(종점)", lat: 35.4522, lng: 127.6253 }], restrooms: [{ name: "황산대첩비 화장실", lat: 35.4490, lng: 127.5610 }], stores: [{ name: "인월 전통시공마트", lat: 35.4515, lng: 127.6235 }], elev: [470, 490, 480, 510, 460, 450] },
+      { id: 3, name: "3코스 인월-금계", region: "남원/함양", dist: "20.5km", dur: "8시간", diff: "상", startLat: 35.4522, startLng: 127.6253, endLat: 35.3725, endLng: 127.6685, waypoints: "인월센터-중군마을-황매암-장항마을-인등재-상황마을-등구재-창원마을-금계", stamps: [{ name: "인월센터(시점)", lat: 35.4522, lng: 127.6253 }, { name: "금계마을(종점)", lat: 35.3725, lng: 127.6685 }], restrooms: [{ name: "장항마을 쉼터", lat: 35.4210, lng: 127.6320 }], stores: [{ name: "상황마을 슈퍼", lat: 35.3850, lng: 127.6520 }], elev: [450, 490, 560, 650, 520, 320] },
+      { id: 4, name: "4코스 금계-동강", region: "경남 함양", dist: "11.0km", dur: "4시간", diff: "중", startLat: 35.3725, startLng: 127.6685, endLat: 35.3905, endLng: 127.7472, waypoints: "금계마을-의탄교-서암정사-벽송사-채원마을-동강마을", stamps: [{ name: "금계마을(시점)", lat: 35.3725, lng: 127.6685 }, { name: "동강마을(종점)", lat: 35.3905, lng: 127.7472 }], restrooms: [{ name: "서암정사 주차장", lat: 35.3650, lng: 127.6790 }], stores: [{ name: "동강슈퍼", lat: 35.3900, lng: 127.7465 }], elev: [320, 380, 410, 300, 240, 210] },
+      { id: 5, name: "5코스 동강-수철", region: "함양/산청", dist: "12.1km", dur: "5시간", diff: "상", startLat: 35.3905, startLng: 127.7472, endLat: 35.4128, endLng: 127.8421, waypoints: "동강마을-산청방곡마을-가현교-쌍재-방곡가령-수철마을", stamps: [{ name: "동강마을(시점)", lat: 35.3905, lng: 127.7472 }, { name: "수철마을(종점)", lat: 35.4128, lng: 127.8421 }], restrooms: [{ name: "방곡마을 회관", lat: 35.4010, lng: 127.7850 }], stores: [{ name: "방곡 매점", lat: 35.4020, lng: 127.7860 }], elev: [210, 260, 680, 750, 400, 280] },
+      { id: 6, name: "6코스 수철-어천", region: "경남 산청", dist: "12.0km", dur: "4.5시간", diff: "중", startLat: 35.4128, startLng: 127.8421, endLat: 35.3361, endLng: 127.8890, waypoints: "수철마을-지막마을-청계저수지-배양시설-어천마을", stamps: [{ name: "수철마을(시점)", lat: 35.4128, lng: 127.8421 }, { name: "어천마을(종점)", lat: 35.3361, lng: 127.8890 }], restrooms: [{ name: "청계 쉼터", lat: 35.3750, lng: 127.8650 }], stores: [{ name: "지막 상회", lat: 35.3980, lng: 127.8520 }], elev: [280, 350, 420, 310, 210, 180] },
+      { id: 7, name: "7코스 어천-운리", region: "경남 산청", dist: "9.7km", dur: "4시간", diff: "상", startLat: 35.3361, startLng: 127.8890, endLat: 35.3045, endLng: 127.8385, waypoints: "어천마을-아침재-웅석봉갈림길-백운계곡-운리마을", stamps: [{ name: "어천마을(시점)", lat: 35.3361, lng: 127.8890 }, { name: "운리마을(종점)", lat: 35.3045, lng: 127.8385 }], restrooms: [{ name: "백운계곡 주차장", lat: 35.3150, lng: 127.8550 }], stores: [{ name: "운리 슈퍼", lat: 35.3040, lng: 127.8380 }], elev: [180, 520, 640, 380, 290, 260] },
+      { id: 8, name: "8코스 운리-덕산", region: "경남 산청", dist: "13.9km", dur: "5시간", diff: "중", startLat: 35.3045, startLng: 127.8385, endLat: 35.2912, endLng: 127.7325, waypoints: "운리마을-마근담입구-백운천-남명조식유적지-덕산(시천)", stamps: [{ name: "운리마을(시점)", lat: 35.3045, lng: 127.8385 }, { name: "덕산장터(종점)", lat: 35.2912, lng: 127.7325 }], restrooms: [{ name: "산천재 화장실", lat: 35.2920, lng: 127.7410 }], stores: [{ name: "덕산 하나로마트", lat: 35.2910, lng: 127.7320 }], elev: [260, 430, 550, 320, 210, 170] },
+      { id: 9, name: "9코스 덕산-청학동", region: "산청/하동", dist: "10.3km", dur: "4.5시간", diff: "상", startLat: 35.2912, startLng: 127.7325, endLat: 35.2635, endLng: 127.7120, waypoints: "덕산-서당마을-우듬지-회남재-청학동마을", stamps: [{ name: "덕산(시점)", lat: 35.2912, lng: 127.7325 }, { name: "청학동(종점)", lat: 35.2635, lng: 127.7120 }], restrooms: [{ name: "회남재 쉼터", lat: 35.2750, lng: 127.7210 }], stores: [{ name: "청학동 매점", lat: 35.2630, lng: 127.7115 }], elev: [170, 310, 740, 830, 710, 680] },
+      { id: 10, name: "10코스 청학동-슬로시티", region: "경남 하동", dist: "10.5km", dur: "4.5시간", diff: "중", startLat: 35.2635, startLng: 127.7120, endLat: 35.1950, endLng: 127.7020, waypoints: "청학동-삼성궁입구-하동호-악양-슬로시티대사리", stamps: [{ name: "청학동(시점)", lat: 35.2635, lng: 127.7120 }, { name: "악양 슬로시티(종점)", lat: 35.1950, lng: 127.7020 }], restrooms: [{ name: "하동호 관리소", lat: 35.2310, lng: 127.7080 }], stores: [{ name: "악양 평사리 매점", lat: 35.1960, lng: 127.7010 }], elev: [680, 540, 320, 210, 140, 90] },
+      { id: 11, name: "11코스 하동호-삼화실", region: "경남 하동", dist: "9.3km", dur: "4시간", diff: "중", startLat: 35.2310, startLng: 127.7080, endLat: 35.1320, endLng: 127.7710, waypoints: "하동호-청암마을-양구마을-삼화실", stamps: [{ name: "하동호(시점)", lat: 35.2310, lng: 127.7080 }, { name: "삼화실(종점)", lat: 35.1320, lng: 127.7710 }], restrooms: [{ name: "양구마을 회관", lat: 35.1810, lng: 127.7410 }], stores: [{ name: "삼화실 가게", lat: 35.1325, lng: 127.7715 }], elev: [320, 280, 340, 290, 210, 160] },
+      { id: 12, name: "12코스 삼화실-대축", region: "경남 하동", dist: "16.7km", dur: "6시간", diff: "상", startLat: 35.1320, startLng: 127.7710, endLat: 35.1110, endLng: 127.6740, waypoints: "삼화실-이명산재-서당마을-형제봉-대축마을", stamps: [{ name: "삼화실(시점)", lat: 35.1320, lng: 127.7710 }, { name: "대축마을(종점)", lat: 35.1110, lng: 127.6740 }], restrooms: [{ name: "서당마을 쉼터", lat: 35.1250, lng: 127.7210 }], stores: [{ name: "대축 슈퍼", lat: 35.1115, lng: 127.6735 }], elev: [160, 380, 520, 430, 260, 80] },
+      { id: 13, name: "13코스 대축-원부춘", region: "경남 하동", dist: "8.6km", dur: "3.5시간", diff: "중", startLat: 35.1110, startLng: 127.6740, endLat: 35.1780, endLng: 127.6320, waypoints: "대축마을-악양 들판-최참판댁-원부춘마을", stamps: [{ name: "대축마을(시점)", lat: 35.1110, lng: 127.6740 }, { name: "원부춘(종점)", lat: 35.1780, lng: 127.6320 }], restrooms: [{ name: "최참판댁 공중화장실", lat: 35.1350, lng: 127.6580 }], stores: [{ name: "평사리 상회", lat: 35.1360, lng: 127.6590 }], elev: [80, 50, 120, 210, 310, 350] },
+      { id: 14, name: "14코스 원부춘-가계", region: "경남 하동", dist: "13.3km", dur: "5시간", diff: "상", startLat: 35.1780, startLng: 127.6320, endLat: 35.2420, endLng: 127.6580, waypoints: "원부춘-형제봉입구-헬기장-가계마을", stamps: [{ name: "원부춘(시점)", lat: 35.1780, lng: 127.6320 }, { name: "가계마을(종점)", lat: 35.2420, lng: 127.6580 }], restrooms: [{ name: "형제봉 쉼터", lat: 35.2100, lng: 127.6450 }], stores: [{ name: "가계 구멍가게", lat: 35.2415, lng: 127.6575 }], elev: [350, 680, 910, 820, 510, 420] },
+      { id: 15, name: "15코스 가계-하동호", region: "경남 하동", dist: "14.7km", dur: "5.5시간", diff: "중", startLat: 35.2420, startLng: 127.6580, endLat: 35.2310, endLng: 127.7080, waypoints: "가계마을-중태재-중태마을-하동호", stamps: [{ name: "가계마을(시점)", lat: 35.2420, lng: 127.6580 }, { name: "하동호(종점)", lat: 35.2310, lng: 127.7080 }], restrooms: [{ name: "중태마을 회관", lat: 35.2350, lng: 127.6820 }], stores: [{ name: "하동호 매점", lat: 35.2315, lng: 127.7075 }], elev: [420, 580, 430, 350, 320, 320] },
+      { id: 16, name: "16코스 서당-목아재", region: "경남 하동", dist: "7.0km", dur: "3시간", diff: "중", startLat: 35.1250, startLng: 127.7210, endLat: 35.1750, endLng: 127.7450, waypoints: "서당마을-우계저수지-목아재", stamps: [{ name: "서당마을(시점)", lat: 35.1250, lng: 127.7210 }, { name: "목아재(종점)", lat: 35.1750, lng: 127.7450 }], restrooms: [{ name: "우계저수지 쉼터", lat: 35.1450, lng: 127.7320 }], stores: [{ name: "서당 구멍가게", lat: 35.1255, lng: 127.7215 }], elev: [180, 240, 380, 520, 580, 610] },
+      { id: 17, name: "17코스 목아재-당재", region: "하동/구례", dist: "11.5km", dur: "4.5시간", diff: "상", startLat: 35.1750, startLng: 127.7450, endLat: 35.2150, endLng: 127.5620, waypoints: "목아재-피아골입구-당재", stamps: [{ name: "목아재(시점)", lat: 35.1750, lng: 127.7450 }, { name: "당재(종점)", lat: 35.2150, lng: 127.5620 }], restrooms: [{ name: "피아골 안내소", lat: 35.2610, lng: 127.5810 }], stores: [{ name: "당재 슈퍼", lat: 35.2145, lng: 127.5625 }], elev: [610, 480, 350, 420, 530, 640] },
+      { id: 18, name: "18코스 당재-밤재", region: "구례/남원", dist: "14.2km", dur: "5.5시간", diff: "중", startLat: 35.2150, startLng: 127.5620, endLat: 35.3120, endLng: 127.4450, waypoints: "당재-연곡사-농평마을-밤재", stamps: [{ name: "당재(시점)", lat: 35.2150, lng: 127.5620 }, { name: "밤재(종점)", lat: 35.3120, lng: 127.4450 }], restrooms: [{ name: "연곡사 주차장", lat: 35.2580, lng: 127.5750 }], stores: [{ name: "농평 상회", lat: 35.2810, lng: 127.5120 }], elev: [640, 410, 550, 680, 520, 490] },
+      { id: 19, name: "19코스 밤재-주천", region: "구례/남원", dist: "10.1km", dur: "4시간", diff: "쉬움", startLat: 35.3120, startLng: 127.4450, endLat: 35.3705, endLng: 127.4042, waypoints: "밤재-지리산둘레길남원센터-주천", stamps: [{ name: "밤재(시점)", lat: 35.3120, lng: 127.4450 }, { name: "주천안내소(종점)", lat: 35.3705, lng: 127.4042 }], restrooms: [{ name: "밤재 쉼터 화장실", lat: 35.3125, lng: 127.4455 }], stores: [{ name: "주천 슈퍼", lat: 35.3700, lng: 127.4040 }], elev: [490, 380, 290, 240, 210, 200] },
+      { id: 20, name: "20코스 구례 산동-주천", region: "구례/남원", dist: "15.9km", dur: "6시간", diff: "상", startLat: 35.3010, startLng: 127.4720, endLat: 35.3705, endLng: 127.4042, waypoints: "산동온천-현천마을-밤재-주천안내소", stamps: [{ name: "산동(시점)", lat: 35.3010, lng: 127.4720 }, { name: "주천(종점)", lat: 35.3705, lng: 127.4042 }], restrooms: [{ name: "현천마을 회관", lat: 35.3080, lng: 127.4610 }], stores: [{ name: "산동 온천마트", lat: 35.3015, lng: 127.4725 }], elev: [240, 310, 520, 490, 280, 200] },
+      { id: 21, name: "21코스 주천-밤재(순환)", region: "전북 남원", dist: "11.2km", dur: "4.5시간", diff: "중", startLat: 35.3705, startLng: 127.4042, endLat: 35.3120, endLng: 127.4450, waypoints: "주천안내소-구룡계곡-개미치-밤재", stamps: [{ name: "주천안내소(시점)", lat: 35.3705, lng: 127.4042 }, { name: "밤재(종점)", lat: 35.3120, lng: 127.4450 }], restrooms: [{ name: "구룡계곡 탐방지원센터", lat: 35.3620, lng: 127.4180 }], stores: [{ name: "육모정 매점", lat: 35.3610, lng: 127.4170 }], elev: [200, 310, 480, 540, 510, 490] }
+    ];
+
+    // ----------------------------------------------------
+    // 2. STATE MANAGEMENT & INDEXED DB
+    // ----------------------------------------------------
+    let userState = {
+      completedCourses: {}, // { courseId: { completed: true, date: '2026-03-29', weather: '☀️ 밝음', memo: '...' } }
+      theme: 'light',
+      filter: 'all',
+      regionFilter: 'all'
+    };
+
+    let activeCourseId = 1;
+    let leafletMap = null;
+    let currentMapTileLayer = null;
+    let currentMarkers = [];
+    let elevationChartInstance = null;
+    let wakeLockSentinel = null;
+    let db = null;
+
+    // Initialize Application
+    window.onload = function() {
+      initTheme();
+      initIndexedDB();
+      loadSavedState();
+      renderCourseGrid();
+      updateDashboard();
+    };
+
+    // ----------------------------------------------------
+    // INDEXED DB FOR PHOTOS
+    // ----------------------------------------------------
+    function initIndexedDB() {
+      const request = indexedDB.open("JirisanDulleGilDB", 1);
+      request.onupgradeneeded = function(e) {
+        db = e.target.result;
+        if (!db.objectStoreNames.contains("photos")) {
+          db.createObjectStore("photos", { keyPath: "id" }); // id format: `${courseId}_${slot}`
+        }
+      };
+      request.onsuccess = function(e) {
+        db = e.target.result;
+      };
+      request.onerror = function(e) {
+        console.warn("IndexedDB error:", e);
+      };
+    }
+
+    function savePhotoToDB(key, base64Data) {
+      if (!db) return;
+      const tx = db.transaction("photos", "readwrite");
+      const store = tx.objectStore("photos");
+      store.put({ id: key, data: base64Data });
+    }
+
+    function getPhotoFromDB(key, callback) {
+      if (!db) { callback(null); return; }
+      const tx = db.transaction("photos", "readonly");
+      const store = tx.objectStore("photos");
+      const req = store.get(key);
+      req.onsuccess = function() {
+        callback(req.result ? req.result.data : null);
+      };
+      req.onerror = function() {
+        callback(null);
+      };
+    }
+
+    // ----------------------------------------------------
+    // LOCAL STORAGE STATE
+    // ----------------------------------------------------
+    function loadSavedState() {
+      try {
+        const saved = localStorage.getItem('jirisan_dulle_state');
+        if (saved) {
+          userState = Object.assign(userState, JSON.parse(saved));
+        }
+      } catch (e) {
+        console.error("Failed to load local storage:", e);
+      }
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem('jirisan_dulle_state', JSON.stringify(userState));
+      } catch (e) {
+        console.error("Failed to save local storage:", e);
+      }
+    }
+
+    // ----------------------------------------------------
+    // THEME HANDLING (SINGLE TOGGLE BUTTON)
+    // ----------------------------------------------------
+    function initTheme() {
+      const isDark = userState.theme === 'dark' || (!('theme' in userState) && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+        userState.theme = 'dark';
+      } else {
+        document.documentElement.classList.remove('dark');
+        userState.theme = 'light';
+      }
+      updateThemeIcon();
+    }
+
+    function toggleTheme() {
+      if (document.documentElement.classList.contains('dark')) {
+        document.documentElement.classList.remove('dark');
+        userState.theme = 'light';
+      } else {
+        document.documentElement.classList.add('dark');
+        userState.theme = 'dark';
+      }
+      saveState();
+      updateThemeIcon();
+
+      // Refresh Map Tiles if detail map is currently open
+      if (leafletMap) {
+        updateMapTileLayer();
+      }
+    }
+
+    function updateThemeIcon() {
+      const icon = document.getElementById('themeIcon');
+      if (userState.theme === 'dark') {
+        icon.className = 'fa-solid fa-sun';
+      } else {
+        icon.className = 'fa-solid fa-moon';
+      }
+    }
+
+    // ----------------------------------------------------
+    // DASHBOARD & FILTERS
+    // ----------------------------------------------------
+    function updateDashboard() {
+      let count = 0;
+      let totalDist = 0;
+
+      COURSES_DATA.forEach(c => {
+        if (userState.completedCourses[c.id] && userState.completedCourses[c.id].completed) {
+          count++;
+          totalDist += parseFloat(c.dist);
+        }
+      });
+
+      document.getElementById('completedCount').innerText = count;
+      document.getElementById('completedDistance').innerText = totalDist.toFixed(1) + " km 완주";
+
+      const pct = Math.round((count / 21) * 100);
+      document.getElementById('progressPercent').innerText = pct + "%";
+      document.getElementById('progressBar').style.width = pct + "%";
+    }
+
+    function setFilter(filterType) {
+      userState.filter = filterType;
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('bg-jirisan-600', 'text-white', 'active');
+        btn.classList.add('bg-gray-200', 'dark:bg-gray-700', 'text-gray-700', 'dark:text-gray-200');
+      });
+      const activeBtn = document.getElementById('filter-' + filterType);
+      if (activeBtn) {
+        activeBtn.classList.remove('bg-gray-200', 'dark:bg-gray-700', 'text-gray-700', 'dark:text-gray-200');
+        activeBtn.classList.add('bg-jirisan-600', 'text-white', 'active');
+      }
+      renderCourseGrid();
+    }
+
+    function setRegionFilter(region) {
+      userState.regionFilter = region;
+      document.querySelectorAll('.region-btn').forEach(btn => {
+        btn.classList.remove('bg-emerald-100', 'text-emerald-800', 'dark:bg-gray-700', 'dark:text-emerald-300', 'active');
+        btn.classList.add('bg-gray-100', 'dark:bg-gray-700', 'text-gray-600', 'dark:text-gray-300');
+      });
+      const activeBtn = document.getElementById('region-' + region);
+      if (activeBtn) {
+        activeBtn.classList.remove('bg-gray-100', 'text-gray-600');
+        activeBtn.classList.add('bg-emerald-100', 'text-emerald-800', 'dark:bg-gray-700', 'dark:text-emerald-300', 'active');
+      }
+      renderCourseGrid();
+    }
+
+    // ----------------------------------------------------
+    // VIEW 1: COMPACT COURSE SELECTION GRID (NO DESCRIPTION / NO BUTTON)
+    // ----------------------------------------------------
+    function renderCourseGrid() {
+      const grid = document.getElementById('courseGrid');
+      grid.innerHTML = '';
+
+      const filtered = COURSES_DATA.filter(c => {
+        const isDone = userState.completedCourses[c.id] && userState.completedCourses[c.id].completed;
+        if (userState.filter === 'completed' && !isDone) return false;
+        if (userState.filter === 'pending' && isDone) return false;
+        if (userState.regionFilter !== 'all' && !c.region.includes(userState.regionFilter)) return false;
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `<div class="col-span-full py-8 text-center text-gray-400 text-xs">조건에 맞는 코스가 없습니다.</div>`;
+        return;
+      }
+
+      filtered.forEach(c => {
+        const isDone = userState.completedCourses[c.id] && userState.completedCourses[c.id].completed;
+        const compDate = isDone && userState.completedCourses[c.id].date ? userState.completedCourses[c.id].date : '';
+
+        const card = document.createElement('div');
+        card.className = `relative p-3.5 rounded-xl border transition-all duration-150 cursor-pointer shadow-sm hover:shadow-md flex flex-col justify-between ${
+          isDone 
+            ? 'bg-emerald-50/70 border-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800' 
+            : 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 hover:border-emerald-400'
+        }`;
+        
+        // Tapping anywhere on the compact card immediately opens detail screen
+        card.onclick = () => openCourseDetail(c.id);
+
+        card.innerHTML = `
+          <!-- Stamp Icon Badge for Completed Card -->
+          ${isDone ? `
+            <div class="absolute top-2 right-2 text-jirisan-stamp opacity-85">
+              <i class="fa-solid fa-stamp text-lg" title="완주 인증"></i>
+            </div>
+          ` : ''}
+
+          <div>
+            <!-- Top Badges -->
+            <div class="flex items-center gap-2 mb-1">
+              <span class="px-2 py-0.5 rounded bg-jirisan-600 text-white text-[11px] font-bold">${c.id}코스</span>
+              <span class="text-[11px] text-gray-500 dark:text-gray-400 font-medium">${c.region}</span>
+              ${isDone ? `
+                <span class="px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-bold">
+                  <i class="fa-solid fa-check"></i> 완주 완료 (${compDate})
+                </span>
+              ` : `
+                <span class="px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-[10px] font-medium">미완주</span>
+              `}
+            </div>
+
+            <!-- Title -->
+            <h3 class="text-base font-bold text-gray-900 dark:text-white pr-6">${c.name.replace(/^\d+코스\s*/, '')}</h3>
+          </div>
+
+          <!-- Compact Specs -->
+          <div class="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-300 mt-2.5 pt-2 border-t border-gray-100 dark:border-gray-700/60">
+            <span><i class="fa-solid fa-route text-emerald-600 mr-1"></i>${c.dist}</span>
+            <span><i class="fa-regular fa-clock text-emerald-600 mr-1"></i>${c.dur}</span>
+            <span><i class="fa-solid fa-mountain text-emerald-600 mr-1"></i>난이도 ${c.diff}</span>
+          </div>
+        `;
+
+        grid.appendChild(card);
+      });
+    }
+
+    // Navigation Switchers
+    function showListView() {
+      document.getElementById('detailView').classList.add('hidden');
+      document.getElementById('listView').classList.remove('hidden');
+      renderCourseGrid();
+      updateDashboard();
+    }
+
+    function openCourseDetail(courseId) {
+      activeCourseId = courseId;
+      document.getElementById('listView').classList.add('hidden');
+      document.getElementById('detailView').classList.remove('hidden');
+      renderDetailScreen();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // ----------------------------------------------------
+    // VIEW 2: COURSE DETAIL RENDER
+    // ----------------------------------------------------
+    function renderDetailScreen() {
+      const c = COURSES_DATA.find(item => item.id === activeCourseId);
+      if (!c) return;
+
+      const cData = userState.completedCourses[c.id] || { completed: false, date: '', weather: '☀️ 밝음', memo: '' };
+
+      document.getElementById('detailBadge').innerText = `${c.id}코스`;
+      document.getElementById('detailRegion').innerText = c.region;
+      document.getElementById('detailTitle').innerText = c.name.replace(/^\d+코스\s*/, '');
+      document.getElementById('detailDistance').innerText = c.dist;
+      document.getElementById('detailDuration').innerText = c.dur;
+      document.getElementById('detailDifficulty').innerText = c.diff;
+      document.getElementById('detailWaypoints').innerText = c.waypoints;
+
+      // Completion Toggle Button State
+      const toggleBtn = document.getElementById('toggleCompleteBtn');
+      if (cData.completed) {
+        toggleBtn.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow bg-red-600 hover:bg-red-700 text-white";
+        toggleBtn.innerHTML = `<i class="fa-solid fa-rotate-left"></i> 완주 취소하기`;
+      } else {
+        toggleBtn.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow bg-jirisan-600 hover:bg-jirisan-700 text-white";
+        toggleBtn.innerHTML = `<i class="fa-solid fa-award"></i> 완주 완료 처리`;
+      }
+
+      // Completion Stamp Seal Display
+      const stampBox = document.getElementById('detailStampContainer');
+      if (cData.completed) {
+        document.getElementById('stampCourseText').textContent = `${c.id}코스`;
+        document.getElementById('stampDateText').textContent = cData.date || getTodayString();
+        stampBox.classList.remove('hidden');
+      } else {
+        stampBox.classList.add('hidden');
+      }
+
+      // Date & Weather
+      const dateInput = document.getElementById('completionDateInput');
+      dateInput.value = cData.date || (cData.completed ? getTodayString() : '');
+
+      setWeatherPillsUI(cData.weather || '☀️ 밝음');
+
+      // Memo
+      document.getElementById('memoInput').value = cData.memo || '';
+
+      // Photos Load
+      loadPhotoPreviews();
+
+      // Render Leaflet Map & Chart
+      setTimeout(() => {
+        initDetailMap(c);
+        initElevationChart(c);
+      }, 100);
+    }
+
+    function getTodayString() {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    // Toggle Course Completion Status
+    function toggleCourseCompletion() {
+      if (!userState.completedCourses[activeCourseId]) {
+        userState.completedCourses[activeCourseId] = { completed: false, date: '', weather: '☀️ 밝음', memo: '' };
+      }
+
+      const cur = userState.completedCourses[activeCourseId];
+      cur.completed = !cur.completed;
+
+      if (cur.completed && !cur.date) {
+        cur.date = getTodayString();
+      }
+
+      saveState();
+      renderDetailScreen();
+      updateDashboard();
+    }
+
+    function updateCompletionDate(val) {
+      if (!userState.completedCourses[activeCourseId]) {
+        userState.completedCourses[activeCourseId] = { completed: false, date: val, weather: '☀️ 밝음', memo: '' };
+      } else {
+        userState.completedCourses[activeCourseId].date = val;
+      }
+      saveState();
+      // Update Stamp Date immediately
+      document.getElementById('stampDateText').textContent = val || getTodayString();
+    }
+
+    function setWeather(weatherVal) {
+      if (!userState.completedCourses[activeCourseId]) {
+        userState.completedCourses[activeCourseId] = { completed: false, date: '', weather: weatherVal, memo: '' };
+      } else {
+        userState.completedCourses[activeCourseId].weather = weatherVal;
+      }
+      saveState();
+      setWeatherPillsUI(weatherVal);
+    }
+
+    function setWeatherPillsUI(weatherVal) {
+      document.querySelectorAll('.weather-pill').forEach(btn => {
+        if (btn.getAttribute('data-weather') === weatherVal) {
+          btn.className = "weather-pill px-2 py-0.5 rounded border border-emerald-500 bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 font-bold text-xs";
+        } else {
+          btn.className = "weather-pill px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs";
+        }
+      });
+    }
+
+    function saveMemo(textVal) {
+      if (!userState.completedCourses[activeCourseId]) {
+        userState.completedCourses[activeCourseId] = { completed: false, date: '', weather: '☀️ 밝음', memo: textVal };
+      } else {
+        userState.completedCourses[activeCourseId].memo = textVal;
+      }
+      saveState();
+    }
+
+    // ----------------------------------------------------
+    // 3. LEAFLET MAP (100% FREE & KEY-FREE TILE LAYERS + GPS KAKAO/NAVER LINKS)
+    // ----------------------------------------------------
+    function initDetailMap(course) {
+      if (leafletMap) {
+        leafletMap.remove();
+        leafletMap = null;
+      }
+
+      leafletMap = L.map('map', { zoomControl: true }).setView([course.startLat, course.startLng], 12);
+
+      updateMapTileLayer();
+
+      // Custom SVG Marker Icons
+      const startIcon = L.divIcon({
+        html: `<div class="bg-emerald-600 text-white rounded-full w-7 h-7 flex items-center justify-center font-bold shadow-lg border-2 border-white text-xs"><i class="fa-solid fa-play"></i></div>`,
+        className: '', iconSize: [28, 28], iconAnchor: [14, 14]
+      });
+
+      const endIcon = L.divIcon({
+        html: `<div class="bg-red-600 text-white rounded-full w-7 h-7 flex items-center justify-center font-bold shadow-lg border-2 border-white text-xs"><i class="fa-solid fa-flag-checkered"></i></div>`,
+        className: '', iconSize: [28, 28], iconAnchor: [14, 14]
+      });
+
+      const stampIcon = L.divIcon({
+        html: `<div class="bg-amber-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow border border-white text-xs"><i class="fa-solid fa-stamp"></i></div>`,
+        className: '', iconSize: [24, 24], iconAnchor: [12, 12]
+      });
+
+      const restIcon = L.divIcon({
+        html: `<div class="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow border border-white text-xs"><i class="fa-solid fa-restroom"></i></div>`,
+        className: '', iconSize: [24, 24], iconAnchor: [12, 12]
+      });
+
+      const storeIcon = L.divIcon({
+        html: `<div class="bg-purple-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow border border-white text-xs"><i class="fa-solid fa-store"></i></div>`,
+        className: '', iconSize: [24, 24], iconAnchor: [12, 12]
+      });
+
+      const bounds = L.latLngBounds();
+
+      // Helper for Kakao/Naver GPS coordinate links inside popup
+      function buildGpsPopup(name, lat, lng, iconClass, iconColorClass) {
+        const kakaoUrl = `https://map.kakao.com/link/map/${encodeURIComponent(name)},${lat},${lng}`;
+        const naverUrl = `https://map.naver.com/v5/?c=${lng},${lat},16,0,0,0,dh`;
+        return `
+          <div class="p-1 min-w-[160px] text-xs">
+            <div class="font-bold text-gray-800 mb-1 flex items-center gap-1">
+              <i class="${iconClass} ${iconColorClass}"></i> ${name}
+            </div>
+            <div class="text-[10px] text-gray-500 mb-2">GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)}</div>
+            <div class="flex items-center gap-1">
+              <a href="${kakaoUrl}" target="_blank" rel="noopener noreferrer" class="px-2 py-1 bg-yellow-400 hover:bg-yellow-500 text-black rounded font-bold text-[10px] text-center flex-1">카카오맵</a>
+              <a href="${naverUrl}" target="_blank" rel="noopener noreferrer" class="px-2 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded font-bold text-[10px] text-center flex-1">네이버지도</a>
+            </div>
+          </div>
+        `;
+      }
+
+      // Add Start Marker
+      const startMarker = L.marker([course.startLat, course.startLng], { icon: startIcon })
+        .addTo(leafletMap)
+        .bindPopup(buildGpsPopup(`${course.name} (시점)`, course.startLat, course.startLng, "fa-solid fa-play", "text-emerald-600"));
+      bounds.extend([course.startLat, course.startLng]);
+
+      // Add End Marker
+      const endMarker = L.marker([course.endLat, course.endLng], { icon: endIcon })
+        .addTo(leafletMap)
+        .bindPopup(buildGpsPopup(`${course.name} (종점)`, course.endLat, course.endLng, "fa-solid fa-flag-checkered", "text-red-600"));
+      bounds.extend([course.endLat, course.endLng]);
+
+      // Add Course Line
+      const routePolyline = L.polyline([[course.startLat, course.startLng], [course.endLat, course.endLng]], {
+        color: '#2d6a4f', weight: 5, opacity: 0.8, dashArray: '8, 6'
+      }).addTo(leafletMap);
+
+      // Add Stamps Markers
+      (course.stamps || []).forEach(st => {
+        L.marker([st.lat, st.lng], { icon: stampIcon })
+          .addTo(leafletMap)
+          .bindPopup(buildGpsPopup(st.name, st.lat, st.lng, "fa-solid fa-stamp", "text-amber-500"));
+        bounds.extend([st.lat, st.lng]);
+      });
+
+      // Add Restroom Markers
+      (course.restrooms || []).forEach(rt => {
+        L.marker([rt.lat, rt.lng], { icon: restIcon })
+          .addTo(leafletMap)
+          .bindPopup(buildGpsPopup(rt.name, rt.lat, rt.lng, "fa-solid fa-restroom", "text-blue-500"));
+        bounds.extend([rt.lat, rt.lng]);
+      });
+
+      // Add Store Markers
+      (course.stores || []).forEach(st => {
+        L.marker([st.lat, st.lng], { icon: storeIcon })
+          .addTo(leafletMap)
+          .bindPopup(buildGpsPopup(st.name, st.lat, st.lng, "fa-solid fa-store", "text-purple-500"));
+        bounds.extend([st.lat, st.lng]);
+      });
+
+      leafletMap.fitBounds(bounds, { padding: [30, 30] });
+
+      setTimeout(() => {
+        leafletMap.invalidateSize();
+      }, 250);
+    }
+
+    // 100% Free Tile Layer Switching (No API Keys Required)
+    function updateMapTileLayer() {
+      if (!leafletMap) return;
+      if (currentMapTileLayer) {
+        leafletMap.removeLayer(currentMapTileLayer);
+      }
+
+      const isDark = document.documentElement.classList.contains('dark');
+      
+      let tileUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}';
+      let attrib = '&copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, METI, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community';
+
+      if (isDark) {
+        tileUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{y}/{x}{r}.png';
+        attrib = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+      }
+
+      currentMapTileLayer = L.tileLayer(tileUrl, {
+        maxZoom: 18,
+        attribution: attrib
+      }).addTo(leafletMap);
+    }
+
+    // ----------------------------------------------------
+    // GPX OVERLAY UPLOADER
+    // ----------------------------------------------------
+    function handleGPXUpload(event) {
+      const file = event.target.files[0];
+      if (!file || !leafletMap) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const text = e.target.result;
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(text, "text/xml");
+        const trkpts = xmlDoc.getElementsByTagName("trkpt");
+
+        const coords = [];
+        for (let i = 0; i < trkpts.length; i++) {
+          const lat = parseFloat(trkpts[i].getAttribute("lat"));
+          const lon = parseFloat(trkpts[i].getAttribute("lon"));
+          if (!isNaN(lat) && !isNaN(lon)) {
+            coords.push([lat, lon]);
+          }
+        }
+
+        if (coords.length > 0) {
+          const gpxPolyline = L.polyline(coords, { color: '#e63946', weight: 4 }).addTo(leafletMap);
+          leafletMap.fitBounds(gpxPolyline.getBounds());
+          alert(`GPX 경로 ${coords.length}개 지점이 지도에 표시되었습니다.`);
+        } else {
+          alert("유효한 GPX 좌표를 찾을 수 없습니다.");
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // ----------------------------------------------------
+    // ELEVATION CHART (CHART.JS)
+    // ----------------------------------------------------
+    function initElevationChart(course) {
+      const ctx = document.getElementById('elevationChart').getContext('2d');
+      if (elevationChartInstance) {
+        elevationChartInstance.destroy();
+      }
+
+      const elevData = course.elev || [200, 300, 400, 300, 200];
+      const distNum = parseFloat(course.dist);
+      const step = distNum / (elevData.length - 1);
+      const labels = elevData.map((_, i) => (i * step).toFixed(1) + ' km');
+
+      const isDark = document.documentElement.classList.contains('dark');
+      const textCol = isDark ? '#d1d5db' : '#374151';
+      const gridCol = isDark ? '#374151' : '#e5e7eb';
+
+      elevationChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: '해발 고도 (m)',
+            data: elevData,
+            borderColor: '#2d6a4f',
+            backgroundColor: isDark ? 'rgba(45, 106, 79, 0.4)' : 'rgba(45, 106, 79, 0.15)',
+            fill: true,
+            tension: 0.35,
+            pointRadius: 4,
+            pointBackgroundColor: '#1b4332'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            x: {
+              ticks: { color: textCol, font: { size: 10 } },
+              grid: { color: gridCol }
+            },
+            y: {
+              ticks: { color: textCol, font: { size: 10 } },
+              grid: { color: gridCol },
+              suggestedMin: 0
+            }
+          }
+        }
+      });
+    }
+
+    // ----------------------------------------------------
+    // SCREEN WAKE LOCK UTILITY
+    // ----------------------------------------------------
+    async function toggleWakeLock() {
+      const btnStatus = document.getElementById('wakeLockStatus');
+      if ('wakeLock' in navigator) {
+        try {
+          if (wakeLockSentinel) {
+            await wakeLockSentinel.release();
+            wakeLockSentinel = null;
+            btnStatus.innerText = "화면 켜짐 유지 OFF";
+          } else {
+            wakeLockSentinel = await navigator.wakeLock.request('screen');
+            btnStatus.innerText = "화면 켜짐 유지 ON";
+          }
+        } catch (err) {
+          console.error("Wake Lock error:", err);
+          alert("화면 켜짐 유지를 지원하지 않거나 설정할 수 없습니다.");
+        }
+      } else {
+        alert("이 브라우저는 Screen Wake Lock API를 지원하지 않습니다.");
+      }
+    }
+
+    // ----------------------------------------------------
+    // PHOTO UPLOADS WITH CANVAS COMPRESSION & INDEXED DB
+    // ----------------------------------------------------
+    function triggerPhotoUpload(slot) {
+      document.getElementById(`photoInput-${slot}`).click();
+    }
+
+    function handlePhotoUpload(event, slot) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          const maxDim = 1000;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxDim) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            }
+          } else {
+            if (height > maxDim) {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const base64Data = canvas.toDataURL('image/jpeg', 0.8);
+          const key = `${activeCourseId}_${slot}`;
+
+          savePhotoToDB(key, base64Data);
+          renderSinglePhotoPreview(slot, base64Data);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function loadPhotoPreviews() {
+      const slots = ['stamp', 'app', 'bus', 'cert'];
+      slots.forEach(slot => {
+        const key = `${activeCourseId}_${slot}`;
+        getPhotoFromDB(key, (data) => {
+          renderSinglePhotoPreview(slot, data);
+        });
+      });
+    }
+
+    function renderSinglePhotoPreview(slot, dataUri) {
+      const box = document.getElementById(`imgPreview-${slot}`);
+      if (!box) return;
+
+      if (dataUri) {
+        box.innerHTML = `
+          <img src="${dataUri}" class="w-full h-full object-cover">
+          <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition text-white text-xs">
+            <span onclick="event.stopPropagation(); openLightbox('${dataUri}')" class="p-1.5 bg-gray-800/80 rounded-full hover:bg-emerald-600"><i class="fa-solid fa-expand"></i></span>
+            <span onclick="event.stopPropagation(); deletePhoto('${slot}')" class="p-1.5 bg-gray-800/80 rounded-full hover:bg-red-600"><i class="fa-solid fa-trash"></i></span>
+          </div>
+        `;
+      } else {
+        box.innerHTML = `<span class="text-gray-400 group-hover:text-emerald-500 text-2xl"><i class="fa-solid fa-plus"></i></span>`;
+      }
+    }
+
+    function deletePhoto(slot) {
+      const key = `${activeCourseId}_${slot}`;
+      if (!db) return;
+      const tx = db.transaction("photos", "readwrite");
+      tx.objectStore("photos").delete(key);
+      renderSinglePhotoPreview(slot, null);
+    }
+
+    function openLightbox(src) {
+      document.getElementById('lightboxImg').src = src;
+      document.getElementById('lightbox').classList.remove('hidden');
+    }
+
+    function closeLightbox() {
+      document.getElementById('lightbox').classList.add('hidden');
+    }
+
+    // ----------------------------------------------------
+    // JSON BACKUP & RESTORE
+    // ----------------------------------------------------
+    function exportData() {
+      const exportObject = {
+        userState: userState,
+        exportDate: new Date().toISOString()
+      };
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportObject, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `Jirisan_DulleGil_Backup_${getTodayString()}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    }
+
+    function importData(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const imported = JSON.parse(e.target.result);
+          if (imported && imported.userState) {
+            userState = imported.userState;
+            saveState();
+            initTheme();
+            renderCourseGrid();
+            updateDashboard();
+            alert("일지 데이터가 성공적으로 복원되었습니다.");
+          } else {
+            alert("유효하지 않은 백업 파일 형상입니다.");
+          }
+        } catch (err) {
+          alert("JSON 파싱 오류가 발생했습니다.");
+        }
+      };
+      reader.readAsText(file);
+    }
+  </script>
+</body>
+</html>
